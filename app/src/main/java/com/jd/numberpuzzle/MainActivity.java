@@ -3,20 +3,48 @@ package com.jd.numberpuzzle;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.graphics.*;
 import android.media.AudioManager;
+import android.media.MediaPlayer;
 import android.media.ToneGenerator;
 import android.os.Bundle;
 import android.view.*;
 import java.util.*;
 
+/**
+ * JD NUMBER PUZZLE
+ *
+ * Updated features:
+ * - Start permission
+ * - Exit permission
+ * - Background music
+ * - Save / Continue
+ * - Large centered question
+ * - 3D number boxes
+ * - Large number font
+ * - Automatic result after every level
+ * - Correct / Wrong / Total score below Hint
+ * - Hint shows actual answer
+ * - 1000 levels
+ */
 public class MainActivity extends Activity {
 
     GameView game;
 
+    MediaPlayer musicPlayer;
+    SharedPreferences prefs;
+
+    boolean exitDialogShowing = false;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
+        prefs = getSharedPreferences(
+                "JD_NUMBER_PUZZLE_SAVE",
+                MODE_PRIVATE
+        );
 
         getWindow().setFlags(
                 WindowManager.LayoutParams.FLAG_FULLSCREEN,
@@ -25,187 +53,789 @@ public class MainActivity extends Activity {
 
         hideBars();
 
+        prepareMusic();
+
         game = new GameView(this);
         setContentView(game);
+
+        // गेम सुरू करण्यापूर्वी परवानगी
+        postStartPermission();
     }
 
+    private void postStartPermission() {
+
+        new AlertDialog.Builder(MainActivity.this)
+                .setTitle("JD NUMBER PUZZLE")
+                .setMessage(
+                        game.hasSavedProgress()
+                                ? "तुमची गेम प्रगती सेव्ह आहे.\n\n" +
+                                  "Level " + game.level +
+                                  " पासून गेम सुरू करायचा आहे का?"
+                                : "गेम सुरू करायचा आहे का?\n\n" +
+                                  "गेम सुरू झाल्यावर संगीत वाजेल."
+                )
+                .setPositiveButton(
+                        game.hasSavedProgress()
+                                ? "CONTINUE"
+                                : "होय, सुरू करा",
+                        (dialog, which) -> {
+
+                            if (game.hasSavedProgress()) {
+                                game.continueGame();
+                            } else {
+                                game.startGame();
+                            }
+
+                            startMusic();
+                        }
+                )
+                .setNegativeButton(
+                        "नंतर",
+                        (dialog, which) -> {
+                            game.gameStarted = false;
+                            game.invalidate();
+                        }
+                )
+                .setOnCancelListener(
+                        dialog -> {
+                            game.gameStarted = false;
+                            game.invalidate();
+                        }
+                )
+                .show();
+    }
+
+    // ------------------------------------------------------------
+    // MUSIC
+    // ------------------------------------------------------------
+
+    private void prepareMusic() {
+
+        try {
+
+            int musicId = getResources().getIdentifier(
+                    "background_music",
+                    "raw",
+                    getPackageName()
+            );
+
+            if (musicId == 0) {
+                musicPlayer = null;
+                return;
+            }
+
+            musicPlayer = MediaPlayer.create(
+                    this,
+                    musicId
+            );
+
+            if (musicPlayer != null) {
+
+                musicPlayer.setLooping(true);
+
+                musicPlayer.setVolume(
+                        0.55f,
+                        0.55f
+                );
+            }
+
+        } catch (Exception ignored) {
+
+            musicPlayer = null;
+        }
+    }
+
+    private void startMusic() {
+
+        try {
+
+            if (musicPlayer == null) {
+                prepareMusic();
+            }
+
+            if (musicPlayer != null &&
+                    !musicPlayer.isPlaying()) {
+
+                musicPlayer.start();
+            }
+
+        } catch (Exception ignored) {
+        }
+    }
+
+    private void pauseMusic() {
+
+        try {
+
+            if (musicPlayer != null &&
+                    musicPlayer.isPlaying()) {
+
+                musicPlayer.pause();
+            }
+
+        } catch (Exception ignored) {
+        }
+    }
+
+    private void stopMusic() {
+
+        try {
+
+            if (musicPlayer != null) {
+
+                if (musicPlayer.isPlaying()) {
+                    musicPlayer.stop();
+                }
+
+                musicPlayer.release();
+                musicPlayer = null;
+            }
+
+        } catch (Exception ignored) {
+        }
+    }
+
+    // ------------------------------------------------------------
+    // SYSTEM UI
+    // ------------------------------------------------------------
+
     private void hideBars() {
-        getWindow().getDecorView().setSystemUiVisibility(
-                View.SYSTEM_UI_FLAG_FULLSCREEN |
-                View.SYSTEM_UI_FLAG_HIDE_NAVIGATION |
-                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY |
-                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN |
-                View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION |
-                View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-        );
+
+        getWindow()
+                .getDecorView()
+                .setSystemUiVisibility(
+
+                        View.SYSTEM_UI_FLAG_FULLSCREEN |
+
+                        View.SYSTEM_UI_FLAG_HIDE_NAVIGATION |
+
+                        View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY |
+
+                        View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN |
+
+                        View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION |
+
+                        View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                );
     }
 
     @Override
-    public void onWindowFocusChanged(boolean hasFocus) {
+    public void onWindowFocusChanged(
+            boolean hasFocus
+    ) {
+
         super.onWindowFocusChanged(hasFocus);
-        if (hasFocus) hideBars();
+
+        if (hasFocus) {
+            hideBars();
+        }
+    }
+
+    // ------------------------------------------------------------
+    // PAUSE / RESUME
+    // ------------------------------------------------------------
+
+    @Override
+    protected void onPause() {
+
+        super.onPause();
+
+        if (game != null) {
+            game.saveGame();
+        }
+
+        pauseMusic();
+    }
+
+    @Override
+    protected void onResume() {
+
+        super.onResume();
+
+        hideBars();
+
+        if (game != null &&
+                game.gameStarted) {
+
+            startMusic();
+        }
+    }
+
+    // ------------------------------------------------------------
+    // EXIT PERMISSION
+    // ------------------------------------------------------------
+
+    @Override
+    public void onBackPressed() {
+
+        if (exitDialogShowing) {
+            return;
+        }
+
+        exitDialogShowing = true;
+
+        new AlertDialog.Builder(
+                MainActivity.this
+        )
+                .setTitle("गेम बंद करायचा?")
+
+                .setMessage(
+                        "तुमची गेम प्रगती सेव्ह केली जाईल.\n\n" +
+                        "गेम बंद करण्यासाठी परवानगी द्या."
+                )
+
+                .setPositiveButton(
+                        "YES",
+                        (dialog, which) -> {
+
+                            if (game != null) {
+                                game.saveGame();
+                            }
+
+                            stopMusic();
+
+                            finish();
+                        }
+                )
+
+                .setNegativeButton(
+                        "NO",
+                        (dialog, which) -> {
+
+                            exitDialogShowing = false;
+                        }
+                )
+
+                .setOnCancelListener(
+                        dialog -> {
+                            exitDialogShowing = false;
+                        }
+                )
+
+                .show();
     }
 
     @Override
     protected void onDestroy() {
+
+        stopMusic();
+
         if (game != null) {
             game.releaseSound();
         }
+
         super.onDestroy();
     }
 
+    // ============================================================
+    // GAME VIEW
+    // ============================================================
+
     class GameView extends View {
 
-        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        Paint p = new Paint(
+                Paint.ANTI_ALIAS_FLAG
+        );
+
         Random random = new Random();
 
-        ArrayList<Integer> numbers = new ArrayList<>();
-        RectF[] numberBoxes = new RectF[4];
+        ArrayList<Integer> numbers =
+                new ArrayList<>();
 
-        RectF resetButton = new RectF();
-        RectF checkButton = new RectF();
-        RectF resultButton = new RectF();
-        RectF hintButton = new RectF();
+        RectF[] numberBoxes =
+                new RectF[4];
+
+        RectF resetButton =
+                new RectF();
+
+        RectF checkButton =
+                new RectF();
+
+        RectF resultButton =
+                new RectF();
+
+        RectF hintButton =
+                new RectF();
 
         int level = 1;
+
         int score = 0;
+
         int roundCorrect = 0;
+
         int roundWrong = 0;
 
         int selected1 = -1;
+
         int selected2 = -1;
 
         int target = 0;
 
         String operation = "";
+
         String question = "";
+
         String status = "";
 
         boolean celebration = false;
 
-        ArrayList<Particle> particles = new ArrayList<>();
+        boolean gameStarted = false;
+
+        ArrayList<Particle> particles =
+                new ArrayList<>();
 
         ToneGenerator tone;
 
-        final int backgroundColor = Color.rgb(3, 7, 18);
-        final int cardColor = Color.rgb(17, 23, 40);
-        final int boxColor = Color.rgb(10, 25, 48);
+        final int backgroundColor =
+                Color.rgb(3, 7, 18);
 
-        final int yellow = Color.rgb(255, 211, 35);
-        final int goldLight = Color.rgb(255, 239, 155);
-        final int blue = Color.rgb(35, 145, 255);
-        final int white = Color.WHITE;
-        final int green = Color.rgb(0, 220, 95);
-        final int red = Color.rgb(235, 25, 45);
-        final int purple = Color.rgb(115, 45, 230);
+        final int cardColor =
+                Color.rgb(17, 23, 40);
+
+        final int boxColor =
+                Color.rgb(10, 25, 48);
+
+        final int yellow =
+                Color.rgb(255, 211, 35);
+
+        final int goldLight =
+                Color.rgb(255, 239, 155);
+
+        final int blue =
+                Color.rgb(35, 145, 255);
+
+        final int white =
+                Color.WHITE;
+
+        final int green =
+                Color.rgb(0, 220, 95);
+
+        final int red =
+                Color.rgb(235, 25, 45);
+
+        final int purple =
+                Color.rgb(115, 45, 230);
 
         GameView(Context context) {
+
             super(context);
 
             setFocusable(true);
 
             try {
+
                 tone = new ToneGenerator(
                         AudioManager.STREAM_MUSIC,
                         85
                 );
+
             } catch (Exception e) {
+
                 tone = null;
             }
+
+            loadSavedGame();
+
+            if (numbers.size() != 4 ||
+                    operation.isEmpty()) {
+
+                newPuzzle();
+            }
+        }
+
+        // ========================================================
+        // SAVE / LOAD
+        // ========================================================
+
+        boolean hasSavedProgress() {
+
+            if (prefs == null) {
+                return false;
+            }
+
+            return prefs.getBoolean(
+                    "gameStarted",
+                    false
+            );
+        }
+
+        void saveGame() {
+
+            if (prefs == null) {
+                return;
+            }
+
+            StringBuilder savedNumbers =
+                    new StringBuilder();
+
+            for (int i = 0;
+                 i < numbers.size();
+                 i++) {
+
+                if (i > 0) {
+                    savedNumbers.append(",");
+                }
+
+                savedNumbers.append(
+                        numbers.get(i)
+                );
+            }
+
+            prefs.edit()
+
+                    .putBoolean(
+                            "gameStarted",
+                            gameStarted
+                    )
+
+                    .putInt(
+                            "level",
+                            level
+                    )
+
+                    .putInt(
+                            "score",
+                            score
+                    )
+
+                    .putInt(
+                            "correct",
+                            roundCorrect
+                    )
+
+                    .putInt(
+                            "wrong",
+                            roundWrong
+                    )
+
+                    .putInt(
+                            "selected1",
+                            selected1
+                    )
+
+                    .putInt(
+                            "selected2",
+                            selected2
+                    )
+
+                    .putInt(
+                            "target",
+                            target
+                    )
+
+                    .putString(
+                            "operation",
+                            operation
+                    )
+
+                    .putString(
+                            "question",
+                            question
+                    )
+
+                    .putString(
+                            "status",
+                            status
+                    )
+
+                    .putString(
+                            "numbers",
+                            savedNumbers.toString()
+                    )
+
+                    .apply();
+        }
+
+        boolean loadSavedGame() {
+
+            if (prefs == null) {
+                return false;
+            }
+
+            if (!prefs.getBoolean(
+                    "gameStarted",
+                    false
+            )) {
+
+                return false;
+            }
+
+            level = Math.max(
+                    1,
+                    Math.min(
+                            1000,
+                            prefs.getInt(
+                                    "level",
+                                    1
+                            )
+                    )
+            );
+
+            score = Math.max(
+                    0,
+                    prefs.getInt(
+                            "score",
+                            0
+                    )
+            );
+
+            roundCorrect = Math.max(
+                    0,
+                    prefs.getInt(
+                            "correct",
+                            0
+                    )
+            );
+
+            roundWrong = Math.max(
+                    0,
+                    prefs.getInt(
+                            "wrong",
+                            0
+                    )
+            );
+
+            selected1 = prefs.getInt(
+                    "selected1",
+                    -1
+            );
+
+            selected2 = prefs.getInt(
+                    "selected2",
+                    -1
+            );
+
+            target = prefs.getInt(
+                    "target",
+                    0
+            );
+
+            operation = prefs.getString(
+                    "operation",
+                    ""
+            );
+
+            question = prefs.getString(
+                    "question",
+                    ""
+            );
+
+            status = prefs.getString(
+                    "status",
+                    ""
+            );
+
+            numbers.clear();
+
+            String saved =
+                    prefs.getString(
+                            "numbers",
+                            ""
+                    );
+
+            if (!saved.isEmpty()) {
+
+                try {
+
+                    String[] values =
+                            saved.split(",");
+
+                    for (String value :
+                            values) {
+
+                        numbers.add(
+                                Integer.parseInt(
+                                        value
+                                )
+                        );
+                    }
+
+                } catch (Exception ignored) {
+
+                    numbers.clear();
+                }
+            }
+
+            gameStarted = true;
+
+            return true;
+        }
+
+        // ========================================================
+        // START / CONTINUE
+        // ========================================================
+
+        void startGame() {
+
+            gameStarted = true;
+
+            level = 1;
+
+            score = 0;
+
+            roundCorrect = 0;
+
+            roundWrong = 0;
+
+            selected1 = -1;
+
+            selected2 = -1;
 
             newPuzzle();
+
+            saveGame();
+
+            startMusic();
+
+            invalidate();
         }
 
+        void continueGame() {
+
+            gameStarted = true;
+
+            if (!loadSavedGame()) {
+
+                level = 1;
+
+                score = 0;
+
+                roundCorrect = 0;
+
+                roundWrong = 0;
+
+                newPuzzle();
+            }
+
+            startMusic();
+
+            invalidate();
+        }
+
+        // ========================================================
+        // SOUND
+        // ========================================================
+
         void releaseSound() {
+
             if (tone != null) {
+
                 tone.release();
+
                 tone = null;
             }
         }
 
-        // ------------------------------------------------------------
-        // SOUND
-        // ------------------------------------------------------------
-
         void beep() {
-            if (tone == null) return;
+
+            if (tone == null) {
+                return;
+            }
 
             try {
+
                 tone.startTone(
                         ToneGenerator.TONE_PROP_BEEP,
                         120
                 );
+
             } catch (Exception ignored) {
             }
         }
 
         void wrongSound() {
-            if (tone == null) return;
+
+            if (tone == null) {
+                return;
+            }
 
             try {
+
                 tone.startTone(
                         ToneGenerator.TONE_PROP_NACK,
                         180
                 );
+
             } catch (Exception ignored) {
             }
         }
 
         void celebrationSound() {
-            if (tone == null) return;
+
+            if (tone == null) {
+                return;
+            }
 
             try {
+
                 tone.startTone(
                         ToneGenerator.TONE_PROP_ACK,
                         160
                 );
 
                 postDelayed(() -> {
+
                     if (tone != null) {
+
                         tone.startTone(
                                 ToneGenerator.TONE_PROP_BEEP2,
                                 150
                         );
                     }
+
                 }, 180);
 
                 postDelayed(() -> {
+
                     if (tone != null) {
+
                         tone.startTone(
                                 ToneGenerator.TONE_PROP_ACK,
                                 180
                         );
                     }
+
                 }, 360);
 
                 postDelayed(() -> {
+
                     if (tone != null) {
+
                         tone.startTone(
                                 ToneGenerator.TONE_PROP_BEEP2,
                                 220
                         );
                     }
+
                 }, 560);
 
             } catch (Exception ignored) {
             }
         }
 
-        // ------------------------------------------------------------
+        // ========================================================
         // PUZZLE
-        // ------------------------------------------------------------
+        // ========================================================
 
         int smallNumber() {
+
             if (random.nextInt(100) < 25) {
-                return 1 + random.nextInt(9);
+
+                return 1 +
+                        random.nextInt(9);
             }
 
-            return 10 + random.nextInt(90);
+            return 10 +
+                    random.nextInt(90);
         }
 
         boolean containsNumber(int n) {
+
             for (int x : numbers) {
-                if (x == n) return true;
+
+                if (x == n) {
+                    return true;
+                }
             }
 
             return false;
@@ -218,53 +848,78 @@ public class MainActivity extends Activity {
                 int n = smallNumber();
 
                 if (!containsNumber(n)) {
+
                     numbers.add(n);
                 }
             }
 
-            Collections.shuffle(numbers, random);
+            Collections.shuffle(
+                    numbers,
+                    random
+            );
         }
 
         void newPuzzle() {
 
             celebration = false;
+
             particles.clear();
 
             numbers.clear();
 
             selected1 = -1;
+
             selected2 = -1;
 
             status = "";
 
-            int type = random.nextInt(4);
+            int type =
+                    random.nextInt(4);
 
             int x;
+
             int y;
+
+            // ----------------------------------------------------
+            // ADDITION
+            // ----------------------------------------------------
 
             if (type == 0) {
 
                 operation = "+";
 
                 do {
+
                     x = smallNumber();
+
                     y = smallNumber();
 
                     target = x + y;
 
-                } while (target < 10 || target > 150);
+                } while (
+                        target < 10 ||
+                        target > 150
+                );
 
                 question =
                         "कोणते दोन नंबर अधिक केल्यावर "
-                                + target +
-                                " मिळेल?";
+                                + target
+                                + " मिळेल?";
 
-            } else if (type == 1) {
+            }
+
+            // ----------------------------------------------------
+            // SUBTRACTION
+            // ----------------------------------------------------
+
+            else if (type == 1) {
 
                 operation = "−";
 
                 do {
+
                     x = smallNumber();
+
                     y = smallNumber();
 
                 } while (x <= y);
@@ -272,36 +927,62 @@ public class MainActivity extends Activity {
                 target = x - y;
 
                 question =
-                        "कोणत्या मोठ्या नंबरमधून कोणता नंबर "
-                                + "वजा केल्यावर "
-                                + target +
-                                " मिळेल?";
+                        "कोणत्या मोठ्या नंबरमधून "
+                                + "कोणता नंबर वजा केल्यावर "
+                                + target
+                                + " मिळेल?";
 
-            } else if (type == 2) {
+            }
+
+            // ----------------------------------------------------
+            // MULTIPLICATION
+            // ----------------------------------------------------
+
+            else if (type == 2) {
 
                 operation = "×";
 
                 do {
-                    x = 2 + random.nextInt(18);
-                    y = 2 + random.nextInt(18);
+
+                    x =
+                            2 +
+                            random.nextInt(18);
+
+                    y =
+                            2 +
+                            random.nextInt(18);
 
                     target = x * y;
 
-                } while (target < 20 || target > 300);
+                } while (
+                        target < 20 ||
+                        target > 300
+                );
 
                 question =
                         "कोणते दोन नंबर गुणिले असता "
-                                + target +
-                                " मिळेल?";
+                                + target
+                                + " मिळेल?";
 
-            } else {
+            }
+
+            // ----------------------------------------------------
+            // DIVISION
+            // ----------------------------------------------------
+
+            else {
 
                 operation = "÷";
 
                 do {
 
-                    y = 2 + random.nextInt(8);
-                    target = 2 + random.nextInt(10);
+                    y =
+                            2 +
+                            random.nextInt(8);
+
+                    target =
+                            2 +
+                            random.nextInt(10);
 
                     x = y * target;
 
@@ -310,29 +991,39 @@ public class MainActivity extends Activity {
                 question =
                         "कोणता नंबर कोणत्या नंबरने "
                                 + "भागल्यावर "
-                                + target +
-                                " मिळेल?";
+                                + target
+                                + " मिळेल?";
             }
 
             numbers.add(x);
+
             numbers.add(y);
 
             fillDecoys();
 
+            saveGame();
+
             invalidate();
         }
 
-        boolean isCorrect(int x, int y) {
+        boolean isCorrect(
+                int x,
+                int y
+        ) {
 
             if (operation.equals("+")) {
+
                 return x + y == target;
             }
 
             if (operation.equals("−")) {
-                return x > y && x - y == target;
+
+                return x > y &&
+                        x - y == target;
             }
 
             if (operation.equals("×")) {
+
                 return x * y == target;
             }
 
@@ -341,34 +1032,52 @@ public class MainActivity extends Activity {
                     x / y == target;
         }
 
-        // ------------------------------------------------------------
-        // CHECK
-        // ------------------------------------------------------------
+        // ========================================================
+        // CHECK ANSWER
+        // ========================================================
 
         void checkAnswer() {
 
-            if (celebration) return;
+            if (celebration) {
+                return;
+            }
+
+            if (!gameStarted) {
+                return;
+            }
 
             beep();
 
-            if (selected1 < 0 || selected2 < 0) {
+            if (selected1 < 0 ||
+                    selected2 < 0) {
 
-                status = "कृपया दोन नंबर निवडा.";
+                status =
+                        "कृपया दोन नंबर निवडा.";
 
                 invalidate();
 
                 return;
             }
 
-            int first = numbers.get(selected1);
-            int second = numbers.get(selected2);
+            int first =
+                    numbers.get(selected1);
 
-            if (isCorrect(first, second)) {
+            int second =
+                    numbers.get(selected2);
+
+            if (isCorrect(
+                    first,
+                    second
+            )) {
 
                 score++;
+
                 roundCorrect++;
 
-                status = "✓ बरोबर! +1 गुण";
+                status =
+                        "✓ बरोबर! +1 गुण";
+
+                saveGame();
 
                 startCelebration();
 
@@ -381,13 +1090,15 @@ public class MainActivity extends Activity {
 
                 wrongSound();
 
+                saveGame();
+
                 invalidate();
             }
         }
 
-        // ------------------------------------------------------------
+        // ========================================================
         // CELEBRATION
-        // ------------------------------------------------------------
+        // ========================================================
 
         void startCelebration() {
 
@@ -399,17 +1110,18 @@ public class MainActivity extends Activity {
 
             celebrationSound();
 
+            saveGame();
+
             invalidate();
 
+            // Celebration नंतर RESULT दाखवणे
             postDelayed(() -> {
 
-                if (level < 1000) {
-                    level++;
-                    newPuzzle();
-                } else {
-                    celebration = false;
-                    showFinalResult();
-                }
+                celebration = false;
+
+                showResult(
+                        level >= 1000
+                );
 
             }, 2200);
         }
@@ -420,81 +1132,130 @@ public class MainActivity extends Activity {
 
             int w = getWidth();
 
-            for (int i = 0; i < 120; i++) {
+            for (int i = 0;
+                 i < 120;
+                 i++) {
 
-                Particle particle = new Particle();
+                Particle particle =
+                        new Particle();
 
                 particle.x =
                         w * .10f +
-                                random.nextFloat() *
-                                        w * .80f;
+                        random.nextFloat()
+                                * w * .80f;
 
                 particle.y =
-                        -random.nextFloat() *
-                                getHeight() * .20f;
+                        -random.nextFloat()
+                                * getHeight()
+                                * .20f;
 
                 particle.vx =
-                        (random.nextFloat() - .5f) * 5f;
+                        (random.nextFloat()
+                                - .5f) * 5f;
 
                 particle.vy =
                         5f +
-                                random.nextFloat() * 9f;
+                        random.nextFloat()
+                                * 9f;
 
                 particle.size =
                         3f +
-                                random.nextFloat() * 7f;
+                        random.nextFloat()
+                                * 7f;
 
                 particle.life =
                         80 +
-                                random.nextInt(80);
+                        random.nextInt(80);
 
                 int[] colors = {
+
                         Color.YELLOW,
-                        Color.rgb(255, 150, 0),
+
+                        Color.rgb(
+                                255,
+                                150,
+                                0
+                        ),
+
                         Color.RED,
+
                         Color.WHITE,
-                        Color.rgb(255, 220, 40)
+
+                        Color.rgb(
+                                255,
+                                220,
+                                40
+                        )
                 };
 
                 particle.color =
-                        colors[random.nextInt(colors.length)];
+                        colors[
+                                random.nextInt(
+                                        colors.length
+                                )
+                        ];
 
-                particles.add(particle);
+                particles.add(
+                        particle
+                );
             }
         }
 
         void updateParticles() {
 
-            for (int i = particles.size() - 1; i >= 0; i--) {
+            for (
+                    int i =
+                            particles.size() - 1;
+                    i >= 0;
+                    i--
+            ) {
 
-                Particle particle = particles.get(i);
+                Particle particle =
+                        particles.get(i);
 
-                particle.x += particle.vx;
-                particle.y += particle.vy;
+                particle.x +=
+                        particle.vx;
 
-                particle.vy += .12f;
+                particle.y +=
+                        particle.vy;
+
+                particle.vy +=
+                        .12f;
 
                 particle.life--;
 
-                if (particle.life <= 0 ||
-                        particle.y > getHeight()) {
+                if (
+                        particle.life <= 0 ||
+                        particle.y > getHeight()
+                ) {
 
                     particles.remove(i);
                 }
             }
         }
 
-        void drawFireShower(Canvas c) {
+        void drawFireShower(
+                Canvas c
+        ) {
 
-            if (!celebration) return;
+            if (!celebration) {
+                return;
+            }
 
             updateParticles();
 
-            p.setStyle(Paint.Style.FILL);
+            p.setStyle(
+                    Paint.Style.FILL
+            );
 
-            for (Particle particle : particles) {
+            for (
+                    Particle particle :
+                    particles
+            ) {
 
-                p.setColor(particle.color);
+                p.setColor(
+                        particle.color
+                );
 
                 c.drawCircle(
                         particle.x,
@@ -505,125 +1266,239 @@ public class MainActivity extends Activity {
             }
 
             if (celebration) {
-                postInvalidateDelayed(30);
+
+                postInvalidateDelayed(
+                        30
+                );
             }
         }
 
-        // ------------------------------------------------------------
+        // ========================================================
         // RESULT
-        // ------------------------------------------------------------
+        // ========================================================
 
-        void showFinalResult() {
+        void showResult(
+                boolean finalGame
+        ) {
 
-            new AlertDialog.Builder(MainActivity.this)
-                    .setTitle("🏆 JD NUMBER PUZZLE पूर्ण!")
-                    .setMessage(
-                            "Level : " + level +
-                                    "\n\n✓ बरोबर : " +
-                                    roundCorrect +
-                                    "\n✗ चुकले : " +
-                                    roundWrong +
-                                    "\n\n⭐ एकूण गुण : " +
-                                    score
+            if (finalGame) {
+
+                new AlertDialog.Builder(
+                        MainActivity.this
+                )
+
+                        .setTitle(
+                                "🏆 JD NUMBER PUZZLE पूर्ण!"
+                        )
+
+                        .setMessage(
+                                "Level : " +
+                                        level +
+
+                                        "\n\n✓ बरोबर : " +
+                                        roundCorrect +
+
+                                        "\n✗ चुकले : " +
+                                        roundWrong +
+
+                                        "\n\n⭐ एकूण गुण : " +
+                                        score
+                        )
+
+                        .setPositiveButton(
+                                "पुन्हा खेळा",
+                                (dialog, which) -> {
+
+                                    level = 1;
+
+                                    score = 0;
+
+                                    roundCorrect = 0;
+
+                                    roundWrong = 0;
+
+                                    newPuzzle();
+
+                                    saveGame();
+
+                                }
+                        )
+
+                        .setNegativeButton(
+                                "ठीक आहे",
+                                null
+                        )
+
+                        .show();
+
+                return;
+            }
+
+            new AlertDialog.Builder(
+                    MainActivity.this
+            )
+
+                    .setTitle(
+                            "RESULT • Level " +
+                                    level
                     )
+
+                    .setMessage(
+                            "✓ बरोबर : " +
+                                    roundCorrect +
+
+                                    "\n✗ चुकीचे : " +
+                                    roundWrong +
+
+                                    "\n⭐ एकूण गुण : " +
+                                    score +
+
+                                    "\n\nLevel " +
+                                    level +
+                                    " पूर्ण झाले!"
+                    )
+
                     .setPositiveButton(
-                            "पुन्हा खेळा",
+                            "पुढील LEVEL",
                             (dialog, which) -> {
 
-                                level = 1;
-                                score = 0;
-                                roundCorrect = 0;
-                                roundWrong = 0;
+                                level++;
 
                                 newPuzzle();
+
+                                saveGame();
+
+                                invalidate();
                             }
                     )
+
                     .setNegativeButton(
                             "ठीक आहे",
                             null
                     )
+
                     .show();
         }
 
-        void showResult() {
-
-            new AlertDialog.Builder(MainActivity.this)
-                    .setTitle("RESULT")
-                    .setMessage(
-                            "Level : " + level +
-                                    "\n\n⭐ गुण : " + score +
-                                    "\n✓ बरोबर : " +
-                                    roundCorrect +
-                                    "\n✗ चुकले : " +
-                                    roundWrong
-                    )
-                    .setPositiveButton(
-                            "ठीक आहे",
-                            null
-                    )
-                    .show();
-        }
+        // ========================================================
+        // HINT
+        // ========================================================
 
         void showHint() {
 
-            String hint;
+            int answerA = -1;
 
-            if (operation.equals("+")) {
+            int answerB = -1;
 
-                hint =
-                        "सूचना: " +
-                                target +
-                                " होण्यासाठी दोन नंबरची बेरीज करा.";
+            for (
+                    int i = 0;
+                    i < numbers.size();
+                    i++
+            ) {
 
-            } else if (operation.equals("−")) {
+                for (
+                        int j = i + 1;
+                        j < numbers.size();
+                        j++
+                ) {
 
-                hint =
-                        "सूचना: मोठ्या नंबरमधून छोटा नंबर वजा करा.";
+                    if (
+                            isCorrect(
+                                    numbers.get(i),
+                                    numbers.get(j)
+                            )
+                    ) {
 
-            } else if (operation.equals("×")) {
+                        answerA =
+                                numbers.get(i);
 
-                hint =
-                        "सूचना: " +
-                                target +
-                                " चे दोन गुणक शोधा.";
+                        answerB =
+                                numbers.get(j);
+
+                        break;
+                    }
+                }
+
+                if (answerA != -1) {
+                    break;
+                }
+            }
+
+            String answer;
+
+            if (answerA != -1) {
+
+                answer =
+                        "उत्तर : " +
+                                answerA +
+                                " " +
+                                operation +
+                                " " +
+                                answerB +
+                                " = " +
+                                target;
+
+                status =
+                        "💡 " + answer;
 
             } else {
 
-                hint =
-                        "सूचना: भागाकार केल्यावर उत्तर " +
-                                target +
-                                " आले पाहिजे.";
+                answer =
+                        "योग्य उत्तर सापडले नाही.";
+
+                status =
+                        "💡 " + answer;
             }
 
-            new AlertDialog.Builder(MainActivity.this)
-                    .setTitle("💡 HINT")
-                    .setMessage(hint)
+            saveGame();
+
+            invalidate();
+
+            new AlertDialog.Builder(
+                    MainActivity.this
+            )
+
+                    .setTitle(
+                            "💡 HINT • उत्तर"
+                    )
+
+                    .setMessage(
+                            answer +
+                                    "\n\n" +
+                                    "हे उत्तर पाहिल्यानंतर " +
+                                    "तुम्ही CHECK करू शकता."
+                    )
+
                     .setPositiveButton(
                             "ठीक आहे",
                             null
                     )
+
                     .show();
         }
 
-        // ------------------------------------------------------------
+        // ========================================================
         // RESET
-        // ------------------------------------------------------------
+        // ========================================================
 
         void resetGame() {
 
             beep();
 
             selected1 = -1;
+
             selected2 = -1;
 
             status = "";
 
             newPuzzle();
+
+            saveGame();
         }
 
-        // ------------------------------------------------------------
+        // ========================================================
         // DRAW HELPERS
-        // ------------------------------------------------------------
+        // ========================================================
 
         void drawText(
                 Canvas c,
@@ -636,8 +1511,13 @@ public class MainActivity extends Activity {
         ) {
 
             p.setShader(null);
-            p.setStyle(Paint.Style.FILL);
+
+            p.setStyle(
+                    Paint.Style.FILL
+            );
+
             p.setColor(color);
+
             p.setTextSize(size);
 
             p.setTypeface(
@@ -646,7 +1526,12 @@ public class MainActivity extends Activity {
                             : Typeface.DEFAULT
             );
 
-            c.drawText(text, x, y, p);
+            c.drawText(
+                    text,
+                    x,
+                    y,
+                    p
+            );
         }
 
         void centerText(
@@ -658,23 +1543,40 @@ public class MainActivity extends Activity {
         ) {
 
             p.setShader(null);
-            p.setStyle(Paint.Style.FILL);
+
+            p.setStyle(
+                    Paint.Style.FILL
+            );
+
             p.setColor(color);
+
             p.setTextSize(size);
-            p.setTypeface(Typeface.DEFAULT_BOLD);
+
+            p.setTypeface(
+                    Typeface.DEFAULT_BOLD
+            );
 
             Paint.FontMetrics fm =
                     p.getFontMetrics();
 
             float x =
-                    r.centerX() -
-                            p.measureText(text) / 2f;
+                    r.centerX()
+                            - p.measureText(text)
+                            / 2f;
 
             float y =
-                    r.centerY() -
-                            (fm.ascent + fm.descent) / 2f;
+                    r.centerY()
+                            - (
+                            fm.ascent
+                                    + fm.descent
+                    ) / 2f;
 
-            c.drawText(text, x, y, p);
+            c.drawText(
+                    text,
+                    x,
+                    y,
+                    p
+            );
         }
 
         void roundedRect(
@@ -685,7 +1587,11 @@ public class MainActivity extends Activity {
         ) {
 
             p.setShader(null);
-            p.setStyle(Paint.Style.FILL);
+
+            p.setStyle(
+                    Paint.Style.FILL
+            );
+
             p.setColor(color);
 
             c.drawRoundRect(
@@ -705,8 +1611,13 @@ public class MainActivity extends Activity {
         ) {
 
             p.setShader(null);
-            p.setStyle(Paint.Style.STROKE);
+
+            p.setStyle(
+                    Paint.Style.STROKE
+            );
+
             p.setStrokeWidth(width);
+
             p.setColor(color);
 
             c.drawRoundRect(
@@ -716,12 +1627,14 @@ public class MainActivity extends Activity {
                     p
             );
 
-            p.setStyle(Paint.Style.FILL);
+            p.setStyle(
+                    Paint.Style.FILL
+            );
         }
 
-        // ------------------------------------------------------------
+        // ========================================================
         // 3D BUTTON
-        // ------------------------------------------------------------
+        // ========================================================
 
         void draw3DButton(
                 Canvas c,
@@ -731,7 +1644,11 @@ public class MainActivity extends Activity {
                 float textSize
         ) {
 
-            float shadow = Math.max(6, r.height() * .12f);
+            float shadow =
+                    Math.max(
+                            6,
+                            r.height() * .12f
+                    );
 
             RectF shadowRect =
                     new RectF(
@@ -744,59 +1661,51 @@ public class MainActivity extends Activity {
             roundedRect(
                     c,
                     shadowRect,
-                    Color.rgb(0, 0, 0),
-                    18
+                    Color.rgb(
+                            0,
+                            0,
+                            0
+                    ),
+                    14
             );
 
-            LinearGradient gradient =
-                    new LinearGradient(
-                            r.left,
-                            r.top,
-                            r.left,
-                            r.bottom,
-                            lighten(color),
-                            color,
-                            Shader.TileMode.CLAMP
-                    );
-
-            p.setShader(gradient);
-            p.setStyle(Paint.Style.FILL);
-
-            c.drawRoundRect(
-                    r,
-                    18,
-                    18,
-                    p
-            );
-
-            p.setShader(null);
-
-            border(
+            roundedRect(
                     c,
                     r,
-                    yellow,
-                    2.2f,
-                    18
+                    color,
+                    14
             );
 
-            // top highlight
+            // 3D top highlight
+            p.setStyle(
+                    Paint.Style.STROKE
+            );
+
+            p.setStrokeWidth(2);
+
             p.setColor(
                     Color.argb(
-                            100,
+                            150,
                             255,
                             255,
                             255
                     )
             );
 
-            p.setStrokeWidth(2);
-
             c.drawLine(
-                    r.left + 14,
-                    r.top + 7,
-                    r.right - 14,
-                    r.top + 7,
+                    r.left + 10,
+                    r.top + 4,
+                    r.right - 10,
+                    r.top + 4,
                     p
+            );
+
+            border(
+                    c,
+                    r,
+                    yellow,
+                    2,
+                    14
             );
 
             centerText(
@@ -808,36 +1717,94 @@ public class MainActivity extends Activity {
             );
         }
 
-        int lighten(int color) {
+        // ========================================================
+        // ROYAL BACKGROUND
+        // ========================================================
 
-            int redC =
-                    Math.min(
-                            255,
-                            Color.red(color) + 55
-                    );
+        void drawBackground(
+                Canvas c,
+                int w,
+                int h
+        ) {
 
-            int greenC =
-                    Math.min(
-                            255,
-                            Color.green(color) + 55
-                    );
+            c.drawColor(
+                    backgroundColor
+            );
 
-            int blueC =
-                    Math.min(
-                            255,
-                            Color.blue(color) + 55
-                    );
+            p.setStyle(
+                    Paint.Style.FILL
+            );
 
-            return Color.rgb(
-                    redC,
-                    greenC,
-                    blueC
+            p.setColor(
+                    Color.rgb(
+                            8,
+                            17,
+                            36
+                    )
+            );
+
+            c.drawCircle(
+                    w * .05f,
+                    h * .15f,
+                    w * .28f,
+                    p
+            );
+
+            c.drawCircle(
+                    w * .96f,
+                    h * .65f,
+                    w * .30f,
+                    p
+            );
+
+            c.drawCircle(
+                    w * .85f,
+                    h * .08f,
+                    w * .17f,
+                    p
+            );
+
+            p.setStyle(
+                    Paint.Style.STROKE
+            );
+
+            p.setStrokeWidth(1.2f);
+
+            p.setColor(
+                    Color.rgb(
+                            24,
+                            39,
+                            70
+                    )
+            );
+
+            for (
+                    int i = 0;
+                    i < 7;
+                    i++
+            ) {
+
+                float y =
+                        h * .20f +
+                                i * h * .11f;
+
+                c.drawLine(
+                        w * .04f,
+                        y,
+                        w * .96f,
+                        y,
+                        p
+                );
+            }
+
+            p.setStyle(
+                    Paint.Style.FILL
             );
         }
 
-        // ------------------------------------------------------------
-        // CROWN
-        // ------------------------------------------------------------
+        // ========================================================
+        // CROWN / JD
+        // ========================================================
 
         void drawCrownLogo(
                 Canvas c,
@@ -846,11 +1813,20 @@ public class MainActivity extends Activity {
                 float size
         ) {
 
-            p.setShader(null);
-            p.setStyle(Paint.Style.FILL);
-            p.setColor(Color.rgb(255, 193, 20));
+            p.setStyle(
+                    Paint.Style.FILL
+            );
 
-            Path crown = new Path();
+            p.setColor(
+                    Color.rgb(
+                            255,
+                            193,
+                            20
+                    )
+            );
+
+            Path crown =
+                    new Path();
 
             crown.moveTo(
                     cx - size * .52f,
@@ -889,7 +1865,10 @@ public class MainActivity extends Activity {
 
             crown.close();
 
-            c.drawPath(crown, p);
+            c.drawPath(
+                    crown,
+                    p
+            );
 
             border(
                     c,
@@ -903,228 +1882,233 @@ public class MainActivity extends Activity {
                     3,
                     8
             );
+
+            drawText(
+                    c,
+                    "JD",
+                    cx - size * .43f,
+                    cy + size * .98f,
+                    size * .68f,
+                    yellow,
+                    true
+            );
         }
 
-        // ------------------------------------------------------------
-        // BACKGROUND
-        // ------------------------------------------------------------
+        // ========================================================
+        // MAIN GAME DRAW
+        // ========================================================
 
-        void drawBackground(
+        void drawGame(
                 Canvas c,
                 int w,
                 int h
         ) {
 
-            c.drawColor(backgroundColor);
-
-            p.setShader(null);
-            p.setStyle(Paint.Style.FILL);
-
-            p.setColor(
-                    Color.rgb(8, 17, 36)
+            drawBackground(
+                    c,
+                    w,
+                    h
             );
-
-            c.drawCircle(
-                    w * .05f,
-                    h * .15f,
-                    w * .28f,
-                    p
-            );
-
-            c.drawCircle(
-                    w * .96f,
-                    h * .65f,
-                    w * .30f,
-                    p
-            );
-
-            c.drawCircle(
-                    w * .85f,
-                    h * .08f,
-                    w * .17f,
-                    p
-            );
-        }
-
-        // ------------------------------------------------------------
-        // GAME SCREEN
-        // ------------------------------------------------------------
-
-        @Override
-        protected void onDraw(Canvas c) {
-
-            super.onDraw(c);
-
-            int w = getWidth();
-            int h = getHeight();
-
-            drawBackground(c, w, h);
 
             float side =
                     Math.max(
-                            18,
+                            16,
                             w * .035f
                     );
 
-            // Crown
-            float crownSize =
-                    Math.min(
-                            w * .16f,
-                            82
-                    );
+            // ----------------------------------------------------
+            // JD LOGO
+            // ----------------------------------------------------
 
             drawCrownLogo(
                     c,
                     w / 2f,
-                    Math.max(45, h * .055f),
-                    crownSize
+                    35,
+                    Math.min(
+                            w * .12f,
+                            48
+                    )
             );
 
-            // --------------------------------------------------------
-            // TITLE
-            // --------------------------------------------------------
+            // ----------------------------------------------------
+            // TITLE - मोठा
+            // ----------------------------------------------------
 
             float titleSize =
                     Math.max(
-                            29,
+                            36,
                             Math.min(
-                                    43,
-                                    w * .070f
+                                    56,
+                                    w * .088f
                             )
                     );
 
             String title =
                     "JD NUMBER PUZZLE";
 
-            p.setTextSize(titleSize);
+            p.setTextSize(
+                    titleSize
+            );
 
             drawText(
                     c,
                     title,
-                    (w - p.measureText(title)) / 2f,
-                    h * .165f,
+                    (w -
+                            p.measureText(title))
+                            / 2f,
+                    105,
                     titleSize,
                     yellow,
                     true
             );
 
-            // Level
+            // ----------------------------------------------------
+            // LEVEL
+            // ----------------------------------------------------
+
             String levelText =
                     "Level " +
                             level +
-                            " / 1000 • No Timer";
+                            " / 1000";
+
+            if (level >= 401) {
+
+                levelText +=
+                        "  •  🔥 HARD MODE";
+
+            } else {
+
+                levelText +=
+                        "  •  No Timer";
+            }
 
             float levelSize =
                     Math.max(
                             15,
-                            w * .030f
+                            w * .032f
                     );
 
-            p.setTextSize(levelSize);
+            p.setTextSize(
+                    levelSize
+            );
 
             drawText(
                     c,
                     levelText,
-                    (w - p.measureText(levelText)) / 2f,
-                    h * .205f,
+                    (w -
+                            p.measureText(
+                                    levelText
+                            )) / 2f,
+                    135,
                     levelSize,
-                    Color.LTGRAY,
+                    level >= 401
+                            ? red
+                            : Color.LTGRAY,
                     true
             );
 
-            // --------------------------------------------------------
+            // ----------------------------------------------------
             // QUESTION CARD
-            // --------------------------------------------------------
+            // ----------------------------------------------------
 
             float questionTop =
-                    h * .235f;
+                    150;
 
             float questionHeight =
-                    Math.max(
-                            245,
-                            Math.min(
-                                    330,
-                                    h * .285f
-                            )
-                    );
+                    155;
 
-            RectF questionCard =
+            RectF card =
                     new RectF(
                             side,
                             questionTop,
                             w - side,
-                            questionTop + questionHeight
+                            questionTop +
+                                    questionHeight
                     );
 
             roundedRect(
                     c,
-                    questionCard,
+                    card,
                     cardColor,
                     22
             );
 
             border(
                     c,
-                    questionCard,
+                    card,
                     blue,
-                    2.5f,
+                    2.2f,
                     22
             );
 
-            // प्रश्न title
             drawText(
                     c,
                     "🧮  प्रश्न",
-                    side + 18,
-                    questionTop + 43,
+                    side + 22,
+                    questionTop + 38,
                     Math.max(
-                            25,
+                            23,
                             w * .052f
                     ),
                     yellow,
                     true
             );
 
-            // --------------------------------------------------------
-            // BIG QUESTION FONT
-            // --------------------------------------------------------
+            // ----------------------------------------------------
+            // QUESTION FONT मोठा + CENTER
+            // ----------------------------------------------------
 
             float qSize =
                     Math.max(
-                            23,
+                            25,
                             Math.min(
-                                    32,
-                                    w * .050f
+                                    38,
+                                    w * .065f
                             )
                     );
 
-            p.setTextSize(qSize);
+            p.setTextSize(
+                    qSize
+            );
+
+            p.setTypeface(
+                    Typeface.DEFAULT_BOLD
+            );
 
             float maxWidth =
-                    questionCard.width() - 36;
+                    card.width() - 40;
 
             ArrayList<String> lines =
                     new ArrayList<>();
 
             String current = "";
 
-            for (String word :
-                    question.split(" ")) {
+            for (
+                    String word :
+                    question.split(" ")
+            ) {
 
                 String test =
                         current.isEmpty()
                                 ? word
-                                : current + " " + word;
+                                : current +
+                                  " " +
+                                  word;
 
-                if (p.measureText(test)
-                        <= maxWidth) {
+                if (
+                        p.measureText(
+                                test
+                        ) <= maxWidth
+                ) {
 
                     current = test;
 
                 } else {
 
                     if (!current.isEmpty()) {
-                        lines.add(current);
+                        lines.add(
+                                current
+                        );
                     }
 
                     current = word;
@@ -1135,102 +2119,197 @@ public class MainActivity extends Activity {
                 lines.add(current);
             }
 
-            float qY =
-                    questionTop + 92;
+            float lineHeight =
+                    qSize + 8;
 
-            for (int i = 0;
-                 i < lines.size() && i < 3;
-                 i++) {
+            float totalHeight =
+                    Math.min(
+                            lines.size(),
+                            2
+                    ) * lineHeight;
+
+            float firstY =
+                    questionTop +
+                    82 -
+                    totalHeight / 2f +
+                    qSize;
+
+            for (
+                    int i = 0;
+                    i < lines.size() &&
+                    i < 2;
+                    i++
+            ) {
+
+                String line =
+                        lines.get(i);
+
+                p.setTextSize(
+                        qSize
+                );
 
                 drawText(
                         c,
-                        lines.get(i),
-                        side + 18,
-                        qY + i * (qSize + 10),
+                        line,
+                        (w -
+                                p.measureText(
+                                        line
+                                )) / 2f,
+                        firstY +
+                                i *
+                                lineHeight,
                         qSize,
                         white,
                         true
                 );
             }
 
-            // Operation
             drawText(
                     c,
                     "क्रिया: " +
                             operation +
                             "  " +
                             operationName(),
-                    side + 18,
-                    questionCard.bottom - 22,
+                    side + 22,
+                    card.bottom - 17,
                     Math.max(
-                            20,
-                            w * .042f
+                            17,
+                            w * .040f
                     ),
                     yellow,
                     true
             );
 
-            // --------------------------------------------------------
-            // FOUR BIG NUMBER BOXES
-            // --------------------------------------------------------
+            // ----------------------------------------------------
+            // NUMBER BOXES
+            // ----------------------------------------------------
+
+            int count = 4;
 
             float gridTop =
-                    questionCard.bottom + h * .025f;
+                    card.bottom + 18;
 
             float gap =
-                    Math.max(
-                            7,
-                            w * .015f
-                    );
+                    10;
 
             float gridWidth =
-                    w - side * 2;
+                    w -
+                    side * 2;
 
             float bw =
-                    (gridWidth - gap * 3) / 4f;
+                    (gridWidth -
+                            gap * 3) /
+                            4f;
 
             float bh =
                     Math.max(
-                            120,
+                            95,
                             Math.min(
-                                    190,
-                                    h * .145f
+                                    130,
+                                    h * .115f
                             )
                     );
 
-            for (int i = 0; i < 4; i++) {
+            for (
+                    int i = 0;
+                    i < count;
+                    i++
+            ) {
 
-                float left =
+                int col =
+                        i % 4;
+
+                float l =
                         side +
-                                i * (bw + gap);
+                        col *
+                        (bw + gap);
 
-                float top =
+                float t =
                         gridTop;
 
                 numberBoxes[i] =
                         new RectF(
-                                left,
-                                top,
-                                left + bw,
-                                top + bh
+                                l,
+                                t,
+                                l + bw,
+                                t + bh
                         );
 
                 boolean selected =
                         selected1 == i ||
-                                selected2 == i;
+                        selected2 == i;
+
+                // ------------------------------------------------
+                // 3D SHADOW
+                // ------------------------------------------------
+
+                RectF shadow =
+                        new RectF(
+                                numberBoxes[i].left + 5,
+                                numberBoxes[i].top + 9,
+                                numberBoxes[i].right + 5,
+                                numberBoxes[i].bottom + 9
+                        );
+
+                roundedRect(
+                        c,
+                        shadow,
+                        Color.argb(
+                                190,
+                                0,
+                                0,
+                                0
+                        ),
+                        16
+                );
+
+                // ------------------------------------------------
+                // MAIN BOX
+                // ------------------------------------------------
 
                 roundedRect(
                         c,
                         numberBoxes[i],
                         selected
                                 ? Color.rgb(
-                                25,
-                                90,
-                                165
-                        )
+                                        28,
+                                        105,
+                                        180
+                                )
                                 : boxColor,
                         16
                 );
+
+                // ------------------------------------------------
+                // TOP 3D HIGHLIGHT
+                // ------------------------------------------------
+
+                p.setStyle(
+                        Paint.Style.STROKE
+                );
+
+                p.setStrokeWidth(3);
+
+                p.setColor(
+                        Color.argb(
+                                150,
+                                255,
+                                255,
+                                255
+                        )
+                );
+
+                c.drawLine(
+                        numberBoxes[i].left + 12,
+                        numberBoxes[i].top + 5,
+                        numberBoxes[i].right - 12,
+                        numberBoxes[i].top + 5,
+                        p
+                );
+
+                // ------------------------------------------------
+                // BORDER
+                // ------------------------------------------------
 
                 border(
                         c,
@@ -1238,13 +2317,28 @@ public class MainActivity extends Activity {
                         selected
                                 ? yellow
                                 : Color.rgb(
-                                45,
-                                110,
-                                190
-                        ),
-                        selected ? 3 : 1.8f,
+                                        45,
+                                        120,
+                                        205
+                                ),
+                        selected
+                                ? 3.5f
+                                : 2f,
                         16
                 );
+
+                // ------------------------------------------------
+                // LARGE NUMBER
+                // ------------------------------------------------
+
+                float numberSize =
+                        Math.max(
+                                30,
+                                Math.min(
+                                        48,
+                                        bw * .42f
+                                )
+                        );
 
                 centerText(
                         c,
@@ -1252,30 +2346,26 @@ public class MainActivity extends Activity {
                                 numbers.get(i)
                         ),
                         numberBoxes[i],
-                        Math.max(
-                                25,
-                                Math.min(
-                                        38,
-                                        bw * .34f
-                                )
-                        ),
+                        numberSize,
                         white
                 );
             }
 
-            // --------------------------------------------------------
-            // HINT BOX
-            // --------------------------------------------------------
+            // ----------------------------------------------------
+            // HINT
+            // ----------------------------------------------------
 
             float hintTop =
-                    gridTop + bh + h * .025f;
+                    gridTop +
+                    bh +
+                    18;
 
             float hintHeight =
                     Math.max(
-                            105,
+                            60,
                             Math.min(
-                                    145,
-                                    h * .105f
+                                    74,
+                                    h * .068f
                             )
                     );
 
@@ -1283,97 +2373,217 @@ public class MainActivity extends Activity {
                     side,
                     hintTop,
                     w - side,
-                    hintTop + hintHeight
+                    hintTop +
+                            hintHeight
             );
+
+            draw3DButton(
+                    c,
+                    hintButton,
+                    "💡 HINT • उत्तर पाहण्यासाठी",
+                    blue,
+                    Math.max(
+                            17,
+                            w * .034f
+                    )
+            );
+
+            // ----------------------------------------------------
+            // STATS - HINT च्या खाली
+            // ----------------------------------------------------
+
+            float statTop =
+                    hintButton.bottom +
+                    10;
+
+            float statHeight =
+                    70;
+
+            RectF statCard =
+                    new RectF(
+                            side,
+                            statTop,
+                            w - side,
+                            statTop +
+                                    statHeight
+                    );
 
             roundedRect(
                     c,
-                    hintButton,
-                    Color.rgb(11, 29, 55),
-                    18
+                    statCard,
+                    Color.rgb(
+                            10,
+                            22,
+                            43
+                    ),
+                    15
             );
 
             border(
                     c,
-                    hintButton,
-                    blue,
-                    2.2f,
-                    18
-            );
-
-            drawText(
-                    c,
-                    "💡",
-                    side + 16,
-                    hintTop + hintHeight * .58f,
-                    Math.max(
-                            28,
-                            w * .055f
-                    ),
+                    statCard,
                     yellow,
-                    true
+                    1.8f,
+                    15
             );
 
-            centerText(
-                    c,
-                    "सूचना : योग्य दोन नंबर निवडा",
-                    new RectF(
-                            side + 55,
-                            hintTop,
-                            w - side - 10,
-                            hintTop + hintHeight
-                    ),
-                    Math.max(
-                            16,
-                            w * .032f
-                    ),
-                    white
-            );
+            float sw =
+                    statCard.width() /
+                            3f;
 
-            // --------------------------------------------------------
-            // THREE 3D BUTTONS
-            // --------------------------------------------------------
+            String[] labels = {
+
+                    "✓ बरोबर",
+
+                    "✗ चुकीचे",
+
+                    "⭐ एकूण गुण"
+            };
+
+            String[] values = {
+
+                    String.valueOf(
+                            roundCorrect
+                    ),
+
+                    String.valueOf(
+                            roundWrong
+                    ),
+
+                    String.valueOf(
+                            score
+                    )
+            };
+
+            int[] statColors = {
+
+                    green,
+
+                    red,
+
+                    yellow
+            };
+
+            for (
+                    int i = 0;
+                    i < 3;
+                    i++
+            ) {
+
+                if (i > 0) {
+
+                    p.setColor(
+                            Color.rgb(
+                                    75,
+                                    70,
+                                    35
+                            )
+                    );
+
+                    p.setStrokeWidth(
+                            1
+                    );
+
+                    c.drawLine(
+                            statCard.left +
+                                    sw * i,
+                            statCard.top + 8,
+                            statCard.left +
+                                    sw * i,
+                            statCard.bottom - 8,
+                            p
+                    );
+                }
+
+                RectF cell =
+                        new RectF(
+                                statCard.left +
+                                        sw * i,
+                                statCard.top,
+                                statCard.left +
+                                        sw * (i + 1),
+                                statCard.bottom
+                        );
+
+                centerText(
+                        c,
+                        labels[i],
+                        new RectF(
+                                cell.left,
+                                cell.top + 3,
+                                cell.right,
+                                cell.centerY()
+                        ),
+                        Math.max(
+                                13,
+                                w * .027f
+                        ),
+                        white
+                );
+
+                centerText(
+                        c,
+                        values[i],
+                        new RectF(
+                                cell.left,
+                                cell.centerY() - 2,
+                                cell.right,
+                                cell.bottom
+                        ),
+                        Math.max(
+                                21,
+                                w * .040f
+                        ),
+                        statColors[i]
+                );
+            }
+
+            // ----------------------------------------------------
+            // BUTTONS
+            // ----------------------------------------------------
 
             float buttonTop =
-                    hintButton.bottom +
-                            h * .035f;
+                    statCard.bottom +
+                    10;
 
             float buttonGap =
-                    Math.max(
-                            7,
-                            w * .012f
-                    );
+                    7;
 
             float buttonWidth =
                     (
                             w -
-                                    side * 2 -
-                                    buttonGap * 2
+                            side * 2 -
+                            buttonGap * 2
                     ) / 3f;
 
             float buttonHeight =
                     Math.max(
-                            68,
+                            55,
                             Math.min(
-                                    92,
-                                    h * .070f
+                                    70,
+                                    h * .065f
                             )
                     );
 
             resetButton.set(
                     side,
                     buttonTop,
-                    side + buttonWidth,
-                    buttonTop + buttonHeight
+                    side +
+                            buttonWidth,
+                    buttonTop +
+                            buttonHeight
             );
 
             checkButton.set(
-                    side + buttonWidth + buttonGap,
+                    side +
+                            buttonWidth +
+                            buttonGap,
                     buttonTop,
                     side +
                             buttonWidth * 2 +
                             buttonGap,
-                    buttonTop + buttonHeight
+                    buttonTop +
+                            buttonHeight
             );
 
             resultButton.set(
@@ -1382,58 +2592,63 @@ public class MainActivity extends Activity {
                             buttonGap * 2,
                     buttonTop,
                     w - side,
-                    buttonTop + buttonHeight
+                    buttonTop +
+                            buttonHeight
             );
-
-            float buttonText =
-                    Math.max(
-                            16,
-                            Math.min(
-                                    23,
-                                    w * .036f
-                            )
-                    );
 
             draw3DButton(
                     c,
                     resetButton,
-                    "↻  RESET",
+                    "RESET",
                     red,
-                    buttonText
+                    Math.max(
+                            15,
+                            w * .030f
+                    )
             );
 
             draw3DButton(
                     c,
                     checkButton,
-                    "✓  CHECK",
+                    "✓ CHECK",
                     green,
-                    buttonText
+                    Math.max(
+                            15,
+                            w * .030f
+                    )
             );
 
             draw3DButton(
                     c,
                     resultButton,
-                    "▮  RESULT",
+                    "RESULT",
                     purple,
-                    buttonText
+                    Math.max(
+                            15,
+                            w * .030f
+                    )
             );
 
-            // --------------------------------------------------------
+            // ----------------------------------------------------
             // STATUS
-            // --------------------------------------------------------
+            // ----------------------------------------------------
 
             if (!status.isEmpty()) {
 
-                RectF statusBox =
+                float statusTop =
+                        buttonTop +
+                        buttonHeight +
+                        10;
+
+                RectF statusRect =
                         new RectF(
                                 side,
-                                buttonTop +
-                                        buttonHeight +
-                                        12,
+                                statusTop,
                                 w - side,
-                                buttonTop +
-                                        buttonHeight +
-                                        52
+                                Math.min(
+                                        h - 15,
+                                        statusTop + 55
+                                )
                         );
 
                 int statusColor =
@@ -1446,209 +2661,34 @@ public class MainActivity extends Activity {
                 centerText(
                         c,
                         status,
-                        statusBox,
+                        statusRect,
                         Math.max(
                                 15,
-                                w * .030f
+                                w * .032f
                         ),
                         statusColor
                 );
             }
 
-            // --------------------------------------------------------
-            // STYLISH FOOTER
-            // --------------------------------------------------------
-
-            String footer =
-                    "✦  JD NUMBER PUZZLE  •  ROYAL EDITION  ✦";
-
-            float footerSize =
-                    Math.max(
-                            12,
-                            Math.min(
-                                    17,
-                                    w * .026f
-                            )
-                    );
-
-            p.setTextSize(footerSize);
-
-            drawText(
-                    c,
-                    footer,
-                    (w - p.measureText(footer)) / 2f,
-                    h * .965f,
-                    footerSize,
-                    goldLight,
-                    true
-            );
-
-            // --------------------------------------------------------
-            // CELEBRATION
-            // --------------------------------------------------------
+            // ----------------------------------------------------
+            // FIREWORK
+            // ----------------------------------------------------
 
             drawFireShower(c);
-
-            if (celebration) {
-                drawCongratulations(c, w, h);
-            }
         }
 
-        // ------------------------------------------------------------
-        // CONGRATULATIONS SCREEN
-        // ------------------------------------------------------------
-
-        void drawCongratulations(
-                Canvas c,
-                int w,
-                int h
-        ) {
-
-            // Dark transparent overlay
-            p.setStyle(Paint.Style.FILL);
-            p.setColor(
-                    Color.argb(
-                            150,
-                            0,
-                            0,
-                            0
-                    )
-            );
-
-            c.drawRect(
-                    0,
-                    0,
-                    w,
-                    h,
-                    p
-            );
-
-            float cardW =
-                    w * .86f;
-
-            float cardH =
-                    Math.min(
-                            300,
-                            h * .30f
-                    );
-
-            RectF card =
-                    new RectF(
-                            (w - cardW) / 2f,
-                            h * .32f,
-                            (w + cardW) / 2f,
-                            h * .32f + cardH
-                    );
-
-            // Shadow
-            RectF shadow =
-                    new RectF(
-                            card.left,
-                            card.top + 10,
-                            card.right,
-                            card.bottom + 10
-                    );
-
-            roundedRect(
-                    c,
-                    shadow,
-                    Color.rgb(
-                            0,
-                            0,
-                            0
-                    ),
-                    25
-            );
-
-            roundedRect(
-                    c,
-                    card,
-                    Color.rgb(
-                            15,
-                            27,
-                            52
-                    ),
-                    25
-            );
-
-            border(
-                    c,
-                    card,
-                    yellow,
-                    3.5f,
-                    25
-            );
-
-            centerText(
-                    c,
-                    "🎉",
-                    new RectF(
-                            card.left,
-                            card.top + 15,
-                            card.right,
-                            card.top + 85
-                    ),
-                    48,
-                    yellow
-            );
-
-            centerText(
-                    c,
-                    "CONGRATULATIONS!",
-                    new RectF(
-                            card.left,
-                            card.top + 75,
-                            card.right,
-                            card.top + 140
-                    ),
-                    Math.max(
-                            24,
-                            w * .055f
-                    ),
-                    yellow
-            );
-
-            centerText(
-                    c,
-                    "✓ योग्य उत्तर!",
-                    new RectF(
-                            card.left,
-                            card.top + 135,
-                            card.right,
-                            card.top + 185
-                    ),
-                    Math.max(
-                            19,
-                            w * .040f
-                    ),
-                    green
-            );
-
-            centerText(
-                    c,
-                    "+1 गुण   •   Level " + level,
-                    new RectF(
-                            card.left,
-                            card.top + 185,
-                            card.right,
-                            card.bottom - 15
-                    ),
-                    Math.max(
-                            16,
-                            w * .032f
-                    ),
-                    white
-            );
-        }
+        // ========================================================
+        // OPERATION NAME
+        // ========================================================
 
         String operationName() {
 
             if (operation.equals("+")) {
-                return "बेरीज";
+                return "अधिक";
             }
 
             if (operation.equals("−")) {
-                return "वजाबाकी";
+                return "वजा";
             }
 
             if (operation.equals("×")) {
@@ -1658,17 +2698,127 @@ public class MainActivity extends Activity {
             return "भागाकार";
         }
 
-        // ------------------------------------------------------------
+        // ========================================================
+        // ON DRAW
+        // ========================================================
+
+        @Override
+        protected void onDraw(
+                Canvas canvas
+        ) {
+
+            super.onDraw(canvas);
+
+            int w =
+                    getWidth();
+
+            int h =
+                    getHeight();
+
+            if (!gameStarted) {
+
+                drawBackground(
+                        canvas,
+                        w,
+                        h
+                );
+
+                drawCrownLogo(
+                        canvas,
+                        w / 2f,
+                        h * .25f,
+                        Math.min(
+                                w * .25f,
+                                h * .14f
+                        )
+                );
+
+                String title =
+                        "JD NUMBER PUZZLE";
+
+                float titleSize =
+                        Math.max(
+                                38,
+                                Math.min(
+                                        58,
+                                        w * .09f
+                                )
+                        );
+
+                p.setTextSize(
+                        titleSize
+                );
+
+                drawText(
+                        canvas,
+                        title,
+                        (w -
+                                p.measureText(
+                                        title
+                                )) / 2f,
+                        h * .43f,
+                        titleSize,
+                        yellow,
+                        true
+                );
+
+                String msg =
+                        "गेम सुरू करण्यासाठी परवानगी द्या";
+
+                float msgSize =
+                        Math.max(
+                                17,
+                                w * .035f
+                        );
+
+                p.setTextSize(
+                        msgSize
+                );
+
+                drawText(
+                        canvas,
+                        msg,
+                        (w -
+                                p.measureText(
+                                        msg
+                                )) / 2f,
+                        h * .50f,
+                        msgSize,
+                        goldLight,
+                        true
+                );
+
+                return;
+            }
+
+            drawGame(
+                    canvas,
+                    w,
+                    h
+            );
+        }
+
+        // ========================================================
         // TOUCH
-        // ------------------------------------------------------------
+        // ========================================================
 
         @Override
         public boolean onTouchEvent(
                 MotionEvent event
         ) {
 
-            if (event.getAction()
-                    != MotionEvent.ACTION_UP) {
+            if (
+                    event.getAction()
+                            != MotionEvent.ACTION_UP
+            ) {
+
+                return true;
+            }
+
+            if (!gameStarted) {
+
+                // Permission पुन्हा दाखवणे
+                postStartPermission();
 
                 return true;
             }
@@ -1677,14 +2827,29 @@ public class MainActivity extends Activity {
                 return true;
             }
 
-            float x = event.getX();
-            float y = event.getY();
+            float x =
+                    event.getX();
 
-            // Number boxes
-            for (int i = 0; i < 4; i++) {
+            float y =
+                    event.getY();
 
-                if (numberBoxes[i] != null &&
-                        numberBoxes[i].contains(x, y)) {
+            // ----------------------------------------------------
+            // NUMBER BOX
+            // ----------------------------------------------------
+
+            for (
+                    int i = 0;
+                    i < 4;
+                    i++
+            ) {
+
+                if (
+                        numberBoxes[i] != null &&
+                        numberBoxes[i].contains(
+                                x,
+                                y
+                        )
+                ) {
 
                     selectNumber(i);
 
@@ -1692,38 +2857,68 @@ public class MainActivity extends Activity {
                 }
             }
 
-            // Hint
-            if (hintButton.contains(x, y)) {
+            // ----------------------------------------------------
+            // HINT
+            // ----------------------------------------------------
 
-                beep();
+            if (
+                    hintButton.contains(
+                            x,
+                            y
+                    )
+            ) {
 
                 showHint();
 
                 return true;
             }
 
-            // Reset
-            if (resetButton.contains(x, y)) {
+            // ----------------------------------------------------
+            // RESET
+            // ----------------------------------------------------
+
+            if (
+                    resetButton.contains(
+                            x,
+                            y
+                    )
+            ) {
 
                 resetGame();
 
                 return true;
             }
 
-            // Check
-            if (checkButton.contains(x, y)) {
+            // ----------------------------------------------------
+            // CHECK
+            // ----------------------------------------------------
+
+            if (
+                    checkButton.contains(
+                            x,
+                            y
+                    )
+            ) {
 
                 checkAnswer();
 
                 return true;
             }
 
-            // Result
-            if (resultButton.contains(x, y)) {
+            // ----------------------------------------------------
+            // RESULT
+            // ----------------------------------------------------
 
-                beep();
+            if (
+                    resultButton.contains(
+                            x,
+                            y
+                    )
+            ) {
 
-                showResult();
+                showResult(
+                        level >= 1000
+                );
 
                 return true;
             }
@@ -1731,7 +2926,13 @@ public class MainActivity extends Activity {
             return true;
         }
 
-        void selectNumber(int index) {
+        // ========================================================
+        // SELECT NUMBER
+        // ========================================================
+
+        void selectNumber(
+                int index
+        ) {
 
             beep();
 
@@ -1754,25 +2955,30 @@ public class MainActivity extends Activity {
             } else {
 
                 selected1 = selected2;
+
                 selected2 = index;
             }
 
             status = "";
 
+            saveGame();
+
             invalidate();
         }
     }
 
-    // ------------------------------------------------------------
-    // FIRE PARTICLE CLASS
-    // ------------------------------------------------------------
+    // ============================================================
+    // PARTICLE
+    // ============================================================
 
     class Particle {
 
         float x;
+
         float y;
 
         float vx;
+
         float vy;
 
         float size;
