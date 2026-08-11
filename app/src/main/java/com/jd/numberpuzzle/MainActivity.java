@@ -2078,18 +2078,23 @@ public class MainActivity extends Activity {
 
         void selectNumber(int index) {
 
-            // पहिला नंबर पुन्हा touch
-            if (selected1 == index) {
+    if (selected1 == index) {
+        selected1 = -1;
+    } else if (selected2 == index) {
+        selected2 = -1;
+    } else if (selected1 == -1) {
+        selected1 = index;
+    } else if (selected2 == -1) {
+        selected2 = index;
+    } else {
+        selected1 = selected2;
+        selected2 = index;
+    }
 
-                selected1 = -1;
+    status = "";
+    invalidate();
+}
 
-            }
+}   // GameView बंद
 
-            // दुसरा नंबर पुन्हा touch
-            else if (selected2 == index) {
-
-                selected2 = -1;
-
-            }
-
-            // पह
+}   // MainActivity बंद
